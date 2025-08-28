@@ -1,0 +1,162 @@
+// -----------------------------------------------------------------------------
+// AXI4-Lite Slave (simple register file)
+// - Always-READY on AW/W/AR
+// - Issues BRESP after it has seen BOTH AW and W handshakes
+// - Holds BVALID until BREADY
+// - On AR handshake, returns data and holds RVALID until RREADY
+// - No WSTRB support (full-word writes)
+// -----------------------------------------------------------------------------
+module a4l_slave #(
+  parameter int MEM_DEPTH = 256  // number of 32-bit words
+)(
+  input  logic        aclk,
+  input  logic        aresetn,
+
+  // Write Address Channel
+  input  logic [31:0] awaddr,
+  input  logic        awvalid,
+  output logic        awready,
+
+  // Write Data Channel
+  input  logic [31:0] wdata,
+  input  logic        wvalid,
+  output logic        wready,
+
+  // Write Response Channel
+  output logic [1:0]  bresp,
+  output logic        bvalid,
+  input  logic        bready,
+
+  // Read Address Channel
+  input  logic [31:0] araddr,
+  input  logic        arvalid,
+  output logic        arready,
+
+  // Read Data Channel
+  output logic [31:0] rdata,
+  output logic [1:0]  rresp,
+  output logic        rvalid,
+  input  logic        rready
+);
+
+  // -------------------------
+  // Simple 32-bit register file
+  // -------------------------
+  localparam int ADDR_LSB   = 2;                          // word aligned
+  localparam int IDX_WIDTH  = $clog2(MEM_DEPTH);
+  localparam int HI_BIT     = ADDR_LSB + IDX_WIDTH - 1;
+
+  logic [31:0] mem [0:MEM_DEPTH-1];
+
+  // -------------------------
+  // Always-ready (simple slave)
+  // -------------------------
+  assign awready = 1'b1;
+  assign wready  = 1'b1;
+  assign arready = 1'b1;
+
+  // -------------------------
+  // Handshake helpers
+  // -------------------------
+  wire aw_hs = awvalid & awready;
+  wire w_hs  = wvalid  & wready;
+  wire b_hs  = bvalid  & bready;
+  wire ar_hs = arvalid & arready;
+  wire r_hs  = rvalid  & rready;
+
+  // -------------------------
+  // Write address/data capture
+  // -------------------------
+  logic [IDX_WIDTH-1:0] awidx_q;
+  logic [31:0]          wdata_q;
+  logic                 got_aw, got_w;
+
+  // B channel
+  logic bvalid_r;
+
+  // -------------------------
+  // Read address/data/resp
+  // -------------------------
+  logic [IDX_WIDTH-1:0] aridx_q;
+  logic [31:0]          rdata_r;
+  logic                 rvalid_r;
+
+  assign bresp  = 2'b00;   // OKAY
+  assign rresp  = 2'b00;   // OKAY
+  assign bvalid = bvalid_r;
+  assign rvalid = rvalid_r;
+  assign rdata  = rdata_r;
+
+  // -------------------------
+  // Write path
+  // -------------------------
+  always_ff @(posedge aclk or negedge aresetn) begin
+    if (!aresetn) begin
+      got_aw   <= 1'b0;
+      got_w    <= 1'b0;
+      awidx_q  <= '0;
+      wdata_q  <= '0;
+      bvalid_r <= 1'b0;
+    end else begin
+      // Capture AW
+      if (aw_hs) begin
+        awidx_q <= awaddr[HI_BIT:ADDR_LSB];
+        got_aw  <= 1'b1;
+      end
+
+      // Capture W
+      if (w_hs) begin
+        wdata_q <= wdata;
+        got_w   <= 1'b1;
+      end
+
+      // When both AW and W are received, perform write and raise BVALID
+      if (!bvalid_r && got_aw && got_w) begin
+        mem[awidx_q] <= wdata_q;
+        bvalid_r     <= 1'b1;
+        // clear latches for next write
+        got_aw       <= 1'b0;
+        got_w        <= 1'b0;
+      end
+
+      // Complete BRESP handshake
+      if (b_hs) begin
+        bvalid_r <= 1'b0;
+      end
+    end
+  end
+
+  // -------------------------
+  // Read path
+  // -------------------------
+  always_ff @(posedge aclk or negedge aresetn) begin
+    if (!aresetn) begin
+      aridx_q  <= '0;
+      rdata_r  <= '0;
+      rvalid_r <= 1'b0;
+    end else begin
+      // Accept read address
+      if (ar_hs && !rvalid_r) begin
+        aridx_q  <= araddr[HI_BIT:ADDR_LSB];
+        rdata_r  <= mem[araddr[HI_BIT:ADDR_LSB]]; // read combinationally into reg
+        rvalid_r <= 1'b1;
+      end
+
+      // Complete RDATA handshake
+      if (r_hs) begin
+        rvalid_r <= 1'b0;
+      end
+    end
+  end
+
+  // -------------------------
+  // Optional: initialize memory (simulation-only)
+  // -------------------------
+`ifdef SIM_INIT
+  initial begin : init_mem
+    integer i;
+    for (i = 0; i < MEM_DEPTH; i++) mem[i] = 32'h0;
+  end
+`endif
+
+endmodule

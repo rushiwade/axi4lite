@@ -1,0 +1,29 @@
+transcript on
+onbreak {resume}
+
+# Clean + setup
+quit -sim -force
+if {[file exists work]} { vdel -lib work -all }
+vlib work
+vmap work work
+
+# Compile (relative paths keep repo portable)
+vlog -sv -timescale 1ns/1ps ../rtl/axl_master.sv
+vlog -sv -timescale 1ns/1ps ../rtl/a4l_slave.sv
+vlog -sv -timescale 1ns/1ps ../tb/axi4lite_sva.sv
+vlog -sv -timescale 1ns/1ps ../tb/tb_axi_master_slave.sv
+
+# Elaborate with full visibility for debug/SVA
+vsim -voptargs=+acc tb_axi_master_slave
+
+# Waves
+do wave_setup.do
+
+# Portable VCD dump (good for GitHub)
+vcd file axi4lite_tb.vcd
+vcd add  -r sim:/tb_axi_master_slave/*
+run -all
+vcd flush
+vcd off
+
+quit -f

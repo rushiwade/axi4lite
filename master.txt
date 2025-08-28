@@ -1,0 +1,189 @@
+// -----------------------------------------------------------------------------
+// AXI4-Lite Single-Transaction Master (write then read, same address)
+// - Ports match your original list (no WSTRB port).
+// - Drives one write, waits for BRESP, then one read, captures RDATA.
+// - VALID signals are held until READY handshake (AXI-compliant).
+// -----------------------------------------------------------------------------
+module axl_master #(
+  parameter logic [31:0] P_ADDR  = 32'h0000_0010,
+  parameter logic [31:0] P_WDATA = 32'hDEAD_BEEF
+)(
+  input  logic        aclk,
+  input  logic        aresetn,
+
+  // Write Address Channel
+  output logic [31:0] awaddr,
+  output logic        awvalid,
+  input  logic        awready,
+
+  // Write Data Channel
+  output logic [31:0] wdata,
+  output logic        wvalid,
+  input  logic        wready,
+
+  // Write Response Channel
+  input  logic [1:0]  bresp,
+  input  logic        bvalid,
+  output logic        bready,
+
+  // Read Address Channel
+  output logic [31:0] araddr,
+  output logic        arvalid,
+  input  logic        arready,
+
+  // Read Data Channel
+  input  logic [31:0] rdata,
+  input  logic [1:0]  rresp,
+  input  logic        rvalid,
+  output logic        rready
+);
+
+  // -------------------------------------------------------
+  // Local storage (address/data constants)
+  // -------------------------------------------------------
+  logic [31:0] write_addr, write_data, read_addr;
+  assign awaddr = write_addr;
+  assign wdata  = write_data;
+  assign araddr = read_addr;
+
+  // -------------------------------------------------------
+  // FSM
+  // -------------------------------------------------------
+  typedef enum logic [2:0] {
+    S_IDLE,
+    S_WA,       // write address
+    S_WD,       // write data
+    S_B,        // write response
+    S_RA,       // read address
+    S_RD,       // read data
+    S_DONE
+  } state_t;
+
+  state_t state, nxt;
+
+  // Handshake helpers
+  wire aw_hs = awvalid & awready;
+  wire w_hs  = wvalid  & wready;
+  wire b_hs  = bvalid  & bready;
+  wire ar_hs = arvalid & arready;
+  wire r_hs  = rvalid  & rready;
+
+  // -------------------------------------------------------
+  // VALID/READY registers (hold until handshake)
+  // -------------------------------------------------------
+  logic awvalid_r, wvalid_r, bready_r;
+  logic arvalid_r, rready_r;
+
+  assign awvalid = awvalid_r;
+  assign wvalid  = wvalid_r;
+  assign bready  = bready_r;
+  assign arvalid = arvalid_r;
+  assign rready  = rready_r;
+
+  // Optional captured read data (not exposed as port, but handy)
+  logic [31:0] read_data_q;
+
+  // -------------------------------------------------------
+  // State register
+  // -------------------------------------------------------
+  always_ff @(posedge aclk or negedge aresetn) begin
+    if (!aresetn) state <= S_IDLE;
+    else          state <= nxt;
+  end
+
+  // -------------------------------------------------------
+  // Next-state logic
+  // -------------------------------------------------------
+  always_comb begin
+    nxt = state;
+    unique case (state)
+      S_IDLE :                      nxt = S_WA;
+      S_WA   : if (aw_hs)           nxt = S_WD;
+      S_WD   : if (w_hs)            nxt = S_B;
+      S_B    : if (b_hs)            nxt = S_RA;
+      S_RA   : if (ar_hs)           nxt = S_RD;
+      S_RD   : if (r_hs)            nxt = S_DONE;
+      S_DONE :                      nxt = S_DONE;
+      default:                      nxt = S_IDLE;
+    endcase
+  end
+
+  // -------------------------------------------------------
+  // Output/control regs
+  //  - Assert VALID/READY on entry to each phase
+  //  - Deassert only after handshake completes
+  // -------------------------------------------------------
+  always_ff @(posedge aclk or negedge aresetn) begin
+    if (!aresetn) begin
+      write_addr <= P_ADDR;
+      write_data <= P_WDATA;
+      read_addr  <= P_ADDR;
+
+      awvalid_r  <= 1'b0;
+      wvalid_r   <= 1'b0;
+      bready_r   <= 1'b0;
+      arvalid_r  <= 1'b0;
+      rready_r   <= 1'b0;
+
+      read_data_q <= '0;
+    end else begin
+      // defaults: hold current values
+      // VALID/READY control
+      // Enter write address phase
+      if (state == S_IDLE && nxt == S_WA) begin
+        awvalid_r <= 1'b1;
+      end
+      // Clear AWVALID on handshake
+      if (state == S_WA && aw_hs) begin
+        awvalid_r <= 1'b0;
+      end
+
+      // Enter write data phase
+      if (state == S_WA && nxt == S_WD) begin
+        wvalid_r <= 1'b1;
+      end
+      // Clear WVALID on handshake
+      if (state == S_WD && w_hs) begin
+        wvalid_r <= 1'b0;
+      end
+
+      // Enter BRESP phase: assert BREADY and hold until BVALID
+      if (state == S_WD && nxt == S_B) begin
+        bready_r <= 1'b1;
+      end
+      if (state == S_B && b_hs) begin
+        bready_r <= 1'b0;
+      end
+
+      // Enter read address phase
+      if (state == S_B && nxt == S_RA) begin
+        arvalid_r <= 1'b1;
+      end
+      // Clear ARVALID on handshake
+      if (state == S_RA && ar_hs) begin
+        arvalid_r <= 1'b0;
+      end
+
+      // Enter read data phase: assert RREADY and hold until RVALID
+      if (state == S_RA && nxt == S_RD) begin
+        rready_r <= 1'b1;
+      end
+      if (state == S_RD && r_hs) begin
+        rready_r <= 1'b0;
+      end
+
+      // Capture read data on handshake
+      if (state == S_RD && r_hs) begin
+        read_data_q <= rdata;
+      end
+    end
+  end
+
+  // -------------------------------------------------------
+  // Notes:
+  // - No WSTRB port here because your port list omitted it.
+  //   If your slave needs it, add: output [3:0] wstrb = 4'hF.
+  // - This master auto-starts after reset. If you want a trigger,
+  //   add an input 'start' and gate S_IDLE -> S_WA on start.
+// -------------------------------------------------------
+endmodule

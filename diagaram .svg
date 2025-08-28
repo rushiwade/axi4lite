@@ -1,0 +1,65 @@
+<!--?xml version="1.0" encoding="UTF-8"?-->
+<svg width="980" height="420" viewBox="0 0 980 420" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .box { fill:#ffffff; stroke:#111; stroke-width:2; rx:12; ry:12; }
+      .title { font: 700 18px 'Segoe UI', Arial, sans-serif; fill:#111; }
+      .label { font: 13px 'Consolas','Courier New', monospace; fill:#111; }
+      .chan  { font: 12px 'Segoe UI', Arial, sans-serif; fill:#111; }
+      .arrow { stroke:#111; stroke-width:2; fill:none; marker-end:url(#arrow); }
+      .arrowRev { stroke:#111; stroke-width:2; fill:none; marker-start:url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#111"></path>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="490" y="30" text-anchor="middle" class="title">AXI4-Lite: Master ↔ Slave (Write + Read)</text>
+
+  <!-- Master box -->
+  <rect x="60" y="90" width="300" height="240" class="box"></rect>
+  <text x="210" y="115" text-anchor="middle" class="title">AXI4-Lite Master</text>
+  <text x="80" y="145" class="label">clk: aclk</text>
+  <text x="80" y="165" class="label">rst: aresetn</text>
+  <text x="80" y="195" class="label">awaddr[31:0], awvalid →</text>
+  <text x="80" y="215" class="label">wdata[31:0],  wvalid  →</text>
+  <text x="80" y="235" class="label">← awready,    ← wready</text>
+  <text x="80" y="265" class="label">← bvalid, bresp[1:0]</text>
+  <text x="80" y="285" class="label">bready →</text>
+  <text x="80" y="315" class="label">araddr[31:0], arvalid →</text>
+  <text x="80" y="335" class="label">← arready</text>
+  <text x="80" y="365" class="label">← rvalid, rdata[31:0], rresp[1:0]</text>
+  <text x="80" y="385" class="label">rready →</text>
+
+  <!-- Slave box -->
+  <rect x="620" y="90" width="300" height="240" class="box"></rect>
+  <text x="770" y="115" text-anchor="middle" class="title">AXI4-Lite Slave</text>
+  <text x="640" y="145" class="label">clk: aclk</text>
+  <text x="640" y="165" class="label">rst: aresetn</text>
+  <text x="640" y="195" class="label">Inputs:  awaddr, awvalid, wdata, wvalid, bready, araddr, arvalid, rready</text>
+  <text x="640" y="215" class="label">Outputs: awready, wready, bvalid, bresp, arready, rvalid, rdata, rresp</text>
+
+  <!-- Channel group labels -->
+  <text x="490" y="155" text-anchor="middle" class="chan">Write Address (AW)</text>
+  <text x="490" y="210" text-anchor="middle" class="chan">Write Data (W)</text>
+  <text x="490" y="255" text-anchor="middle" class="chan">Write Response (B)</text>
+  <text x="490" y="310" text-anchor="middle" class="chan">Read Address (AR)</text>
+  <text x="490" y="365" text-anchor="middle" class="chan">Read Data (R)</text>
+
+  <!-- AW: Master → Slave -->
+  <line x1="360" y1="150" x2="620" y2="150" class="arrow"></line>
+  <!-- W: Master → Slave -->
+  <line x1="360" y1="205" x2="620" y2="205" class="arrow"></line>
+  <!-- B: Slave → Master -->
+  <line x1="360" y1="250" x2="620" y2="250" class="arrowRev"></line>
+  <!-- AR: Master → Slave -->
+  <line x1="360" y1="305" x2="620" y2="305" class="arrow"></line>
+  <!-- R: Slave → Master -->
+  <line x1="360" y1="360" x2="620" y2="360" class="arrowRev"></line>
+
+  <!-- Small notes -->
+  <text x="490" y="395" text-anchor="middle" class="chan">
+    Protocol: VALID held until READY; responses OKAY (bresp/rresp == 2'b00)
+  </text>
+</svg>
